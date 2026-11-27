@@ -143,19 +143,23 @@ Daily partitions are fine at this volume (about 365 a year). At production scale
 | Layer | Model | Grain (one row per…) | Main tests |
 |---|---|---|---|
 | staging | `stg_panel__responses` | API call | `unique(response_id)`; unique on `(run_id, engine, prompt_id, sample_idx)`; `accepted_values(engine, status)` |
-| staging | `stg_wildchat__conversations` | conversation | `unique(conversation_hash)` |
-| staging | `stg_wildchat__turns` | turn (conversation × turn index) | unique on `(conversation_hash, turn_index)` |
-| intermediate | `int_panel__brand_mentions` | response × tracked brand in its category | unique on `(response_id, brand)`; `mentioned` not null |
-| intermediate | `int_wildchat__commercial_turns` | user turn, tagged by the intent rules | unique on `(conversation_hash, turn_index)` |
-| intermediate | `int_wildchat__brand_mentions` | assistant turn × brand | unique on `(conversation_hash, turn_index, brand)` |
+| staging | `stg_wildchat__conversations` | conversation | `unique(conversation_id)` |
+| staging | `stg_wildchat__turns` | turn (conversation × turn index) | unique on `(conversation_id, turn_index)` |
+| intermediate | `int_panel__brand_mentions` | `status = ok` response × tracked brand in its category (error rows excluded, so they never count as "not mentioned") | unique on `(response_id, brand)`; `mentioned` not null |
+| intermediate | `int_wildchat__commercial_turns` | user turn, tagged by the intent rules | unique on `(conversation_id, turn_index)` |
+| intermediate | `int_wildchat__brand_mentions` | assistant turn × brand | unique on `(conversation_id, turn_index, brand)` |
 | marts | `fct_panel_mentions_daily` | day × engine × prompt × brand: n, k, rate, wilson_low, wilson_high | rate between 0 and 1; n ≤ `samples_per_prompt` |
-| marts | `fct_panel_category_daily` | day × engine × category × brand, pooled across prompts | Same, plus p-chart and Laney p′ limits; n_eff ≤ n |
-| marts | `fct_run_costs` | run × engine: calls, tokens, est_cost_usd, error_rate | Nothing missing for runs that exist |
-| marts | `fct_wildchat_brand_share` | category × brand | Shares sum to 1 per category |
+| marts | `fct_panel_category_daily` | day × engine × category × brand, pooled across prompts | Same, plus p-chart and Laney p′ limits |
+| marts | `fct_run_costs` | run × engine: calls, tokens, est_cost_usd, error_rate (the one place error rows are counted) | Nothing missing for runs that exist |
+| marts | `fct_wildchat_brand_share` | category × brand | Shares sum to 1 per category, within 1e-9 (floating-point sums aren't exact) |
  
 **How a mention is detected:** a case-insensitive, whole-word match on a brand or any of its aliases. This is deliberately simple and transparent. Its weaknesses (e.g. "Apple" the fruit) are listed in the README, and its accuracy is measured against hand labels (§8).
  
-**Incremental models:** the panel staging and mart models are incremental, one day at a time. The WildChat models are rebuilt in full, since that data never changes.
+**One brand list:** `collector/brands.yaml` is the only source. A `make` step generates `dbt/seeds/brands.csv` from it, and CI fails if the two differ, so the collector and the matcher never track different brands.
+ 
+**SQL vs. Python:** the marts hold counts, Wilson intervals and p-chart / Laney p′ limits, all plain SQL. The cluster bootstrap, ρ and n_eff need resampling, so they are computed in `analysis/` (Python) from the marts.
+ 
+**Materialization:** every model is a plain table, rebuilt in full on each `dbt build`. The panel is about 6,300 rows over 21 days, which ClickHouse rebuilds in under a second, and a full rebuild always picks up republished days. A typical "new days only" incremental model would silently keep the old version of a republished day. At production scale you'd use `incremental_strategy='insert_overwrite'` by partition, so republished days get rebuilt; the README says so.
  
 ---
  

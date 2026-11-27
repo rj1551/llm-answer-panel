@@ -27,3 +27,9 @@ One line per design choice or change to SPEC.md, with one line of why.
 | 2026-11-27 | §5 | Don't load WildChat `header`; keep `hashed_ip`, `country`, `language` | Load only the personal data the analysis needs |
 | 2026-11-27 | §5 | Panel `ORDER BY (engine, category, prompt_id, run_id, sample_idx)`; `LowCardinality(String)` for low-distinct columns | `run_date` is constant within a daily partition, and the marts group by engine and category |
 | 2026-11-27 | §5 | Daily partitions for the panel; at production scale, partition by month and swap at a finer level | About 21–365 partitions is fine here; thousands of small partitions would slow merges and metadata |
+| 2026-11-27 | §6 | All WildChat models keyed on `conversation_id` instead of `conversation_hash` | Applies the §5 key decision; hash-based unique tests would fail on identical conversations |
+| 2026-11-27 | §6 | Every model is a full-refresh table, not incremental; README names `insert_overwrite` by partition as the at-scale approach | About 6,300 rows rebuild in under a second, and "new days only" incremental models would miss republished days |
+| 2026-11-27 | §6 | Brand mentions use only `status = ok` responses; errors are counted only in `fct_run_costs` | Otherwise a failed call would count as "brand not mentioned" and bias rates down |
+| 2026-11-27 | §6 | `collector/brands.yaml` is the single brand list; `make` generates `dbt/seeds/brands.csv` and CI checks they match | Two hand-kept lists would drift, and the matcher would track different brands than the collector |
+| 2026-11-27 | §1, §6 | Cluster bootstrap, ρ and n_eff are computed in `analysis/` (Python), not in dbt marts; drop the `n_eff ≤ n` mart test | Resampling is awkward in SQL; the marts keep counts, Wilson and control-chart limits |
+| 2026-11-27 | §6 | WildChat brand-share test allows a 1e-9 tolerance on the sum | Floating-point sums come out as 0.9999999, which an exact test would fail |
