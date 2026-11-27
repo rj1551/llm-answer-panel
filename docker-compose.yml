@@ -1,0 +1,31 @@
+name: llm-answer-panel
+
+services:
+  clickhouse:
+    # Pinned LTS release, so a new image can't change SQL behaviour under us.
+    image: clickhouse/clickhouse-server:25.8
+    environment:
+      # Read from .env by Compose; the defaults are for local use only.
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-panel}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-panel_local}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      # HTTP interface only (dbt-clickhouse and clickhouse-connect use it),
+      # bound to localhost so the database is not reachable from the network.
+      - "127.0.0.1:${CLICKHOUSE_PORT:-8123}:8123"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --query 'SELECT 1'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  clickhouse_data:

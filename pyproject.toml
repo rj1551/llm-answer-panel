@@ -1,0 +1,33 @@
+[project]
+name = "llm-answer-panel"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "dagster==1.13.31",
+    "dagster-webserver==1.13.31",
+    "dagster-dbt==0.29.31",
+    "dbt-core==1.12.7",
+    "dbt-clickhouse==1.10.4",
+    "clickhouse-connect==1.13.0",
+    "python-dotenv[cli]==1.2.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0", "ruff==0.17.6"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["orchestration*"]
+
+[tool.dagster]
+module_name = "orchestration.definitions"
+
+[tool.pytest.ini_options]
+testpaths = ["orchestration/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

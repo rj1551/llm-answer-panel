@@ -60,3 +60,13 @@ One line per design choice or change to SPEC.md, with one line of why.
 | 2026-11-27 | §9, §12 | If measured cost > ≈ $1.80/day, raise the hard limit to $50 instead of cutting prompts | About $10 more in the worst case, versus losing the scarcest input |
 | 2026-11-27 | §3, §12, PLAN | Enable the 21-day schedule after session 6; earlier runs are manual tests, excluded from analysis | All 21 days share one prompt set, so the p-chart never restarts |
 | 2026-11-27 | §12 | Gemini web search on; prompt wording neutral with no brand named | Keeps the engines comparable, and brand-naming prompts would inflate mentions |
+| 2026-11-27 | §11, session 1 | ClickHouse image pinned to `clickhouse/clickhouse-server:25.8` (LTS) | A floating `latest` tag could change SQL behaviour between sessions |
+| 2026-11-27 | §11, session 1 | Expose only the HTTP port 8123, bound to 127.0.0.1 | dbt-clickhouse and clickhouse-connect both use HTTP; nothing else should reach the database |
+| 2026-11-27 | §4, §5, session 1 | An init script creates the `raw` and `staging` databases; dbt models build into `analytics` | Loaders and the publish swap need both databases to exist; keeping dbt output separate stops a model from overwriting loaded data |
+| 2026-11-27 | §11, session 1 | ClickHouse settings default to local values (user `panel`) in Compose, dbt and Dagster; `.env` overrides them | `make up` works before any key is set, and all three tools share one set of names |
+| 2026-11-27 | §11, session 1 | One root venv and `pyproject.toml` with exact pins for dbt, Dagster and the ClickHouse client | Their dependencies overlap; one pinned environment avoids conflicts and drift |
+| 2026-11-27 | §11, session 1 | `make` commands run through `dotenv run --no-override` | dbt doesn't read `.env` itself; `--no-override` lets a variable set in the shell win for one-off runs |
+| 2026-11-27 | §11, session 1 | `dbt/profiles.yml` is committed; it holds only `env_var()` lookups | Anyone cloning the repo (and CI) can run dbt without building a profile by hand |
+| 2026-11-27 | §11, session 1 | `DAGSTER_HOME` = `.dagster_home/` in the repo (gitignored) | Run history survives restarts of `dagster dev` instead of living in a temporary folder |
+| 2026-11-27 | §11, session 1 | Live ClickHouse test is opt-in (`make test-live`); `make test` and `make validate` work offline | CI and quick checks shouldn't need a running server |
+| 2026-11-27 | §12 | Delete the leftover pre-decision §12 table from SPEC.md | It still said 5 samples per prompt and listed credit cards, contradicting the settled §12 |
