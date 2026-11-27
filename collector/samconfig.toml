@@ -1,0 +1,16 @@
+# No secrets or personal details here: R2 endpoint, bucket and alert email are passed by
+# `make deploy` from .env at deploy time.
+version = 0.1
+
+[default.global.parameters]
+stack_name = "llm-panel-collector"
+region = "us-east-2"
+
+[default.build.parameters]
+cached = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+confirm_changeset = false
+fail_on_empty_changeset = false

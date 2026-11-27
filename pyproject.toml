@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==9.2.0", "ruff==0.17.6"]
+dev = ["pytest==9.2.0", "ruff==0.17.6", "boto3==1.44.12", "PyYAML==6.0.4", "cfn-lint==1.61.0"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -26,8 +26,13 @@ include = ["orchestration*"]
 module_name = "orchestration.definitions"
 
 [tool.pytest.ini_options]
-testpaths = ["orchestration/tests"]
+testpaths = ["orchestration/tests", "collector/tests"]
+pythonpath = ["collector/src"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+src = [".", "collector/src"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["orchestration", "engines", "handler"]

@@ -1,0 +1,84 @@
+# STARTER prompts for manual test runs only (SPEC §3, §12). Session 6 replaces them with
+# prompts drawn from WildChat; this version stays in git history.
+# Neutral wording, no brand named. prompt_version = SHA-256 of this file's bytes.
+samples_per_prompt: 2
+
+prompts:
+  # laptops
+  - {id: lap-01, category: laptops, text: "What laptop should I buy for college?"}
+  - {id: lap-02, category: laptops, text: "What's the best laptop for programming?"}
+  - {id: lap-03, category: laptops, text: "Which lightweight laptop has the longest battery life?"}
+  - {id: lap-04, category: laptops, text: "What is a good budget laptop under $600?"}
+  - {id: lap-05, category: laptops, text: "Which laptop is best for video editing?"}
+  - {id: lap-06, category: laptops, text: "What gaming laptop would you recommend?"}
+  - {id: lap-07, category: laptops, text: "What's a good laptop for an elderly parent who mostly browses and emails?"}
+  - {id: lap-08, category: laptops, text: "Which 2-in-1 laptop is worth buying?"}
+  - {id: lap-09, category: laptops, text: "What laptop should a graphic design student get?"}
+  - {id: lap-10, category: laptops, text: "Which business laptop is the most reliable?"}
+  - {id: lap-11, category: laptops, text: "What is the best laptop for working from home?"}
+  - {id: lap-12, category: laptops, text: "Recommend a laptop for data science and machine learning."}
+  # running shoes
+  - {id: run-01, category: running_shoes, text: "What are the best running shoes for beginners?"}
+  - {id: run-02, category: running_shoes, text: "Which running shoes are good for flat feet?"}
+  - {id: run-03, category: running_shoes, text: "What running shoes would you recommend for marathon training?"}
+  - {id: run-04, category: running_shoes, text: "What are the best trail running shoes?"}
+  - {id: run-05, category: running_shoes, text: "Which running shoes have the most cushioning?"}
+  - {id: run-06, category: running_shoes, text: "What are good running shoes for overpronation?"}
+  - {id: run-07, category: running_shoes, text: "Which running shoes are best for wide feet?"}
+  - {id: run-08, category: running_shoes, text: "What are the best lightweight racing shoes for a 5k?"}
+  - {id: run-09, category: running_shoes, text: "What running shoes are good for heavy runners?"}
+  - {id: run-10, category: running_shoes, text: "Which running shoes help with knee pain?"}
+  - {id: run-11, category: running_shoes, text: "What are good budget running shoes?"}
+  - {id: run-12, category: running_shoes, text: "Which running shoes last the most miles?"}
+  # CRM software
+  - {id: crm-01, category: crm_software, text: "What CRM software is best for a small business?"}
+  - {id: crm-02, category: crm_software, text: "Which CRM is easiest to learn for a sales team?"}
+  - {id: crm-03, category: crm_software, text: "What is a good free CRM?"}
+  - {id: crm-04, category: crm_software, text: "Which CRM would you recommend for a real estate agent?"}
+  - {id: crm-05, category: crm_software, text: "What CRM works best for a B2B startup?"}
+  - {id: crm-06, category: crm_software, text: "Which CRM has the best email marketing integration?"}
+  - {id: crm-07, category: crm_software, text: "What CRM is best for a nonprofit?"}
+  - {id: crm-08, category: crm_software, text: "Which CRM is best for an enterprise sales organization?"}
+  - {id: crm-09, category: crm_software, text: "What's a good CRM for freelancers?"}
+  - {id: crm-10, category: crm_software, text: "Which CRM has the best mobile app?"}
+  - {id: crm-11, category: crm_software, text: "What CRM should an e-commerce store use?"}
+  - {id: crm-12, category: crm_software, text: "Which CRM is best for managing customer support tickets too?"}
+  # project-management tools
+  - {id: pm-01, category: project_management, text: "What project management tool is best for a remote team?"}
+  - {id: pm-02, category: project_management, text: "Which project management software is good for small teams?"}
+  - {id: pm-03, category: project_management, text: "What is the best free project management tool?"}
+  - {id: pm-04, category: project_management, text: "Which project management tool works best for agile software teams?"}
+  - {id: pm-05, category: project_management, text: "What project management app is good for personal task tracking?"}
+  - {id: pm-06, category: project_management, text: "Which project management tool is best for a marketing agency?"}
+  - {id: pm-07, category: project_management, text: "What tool would you recommend for Gantt charts and project timelines?"}
+  - {id: pm-08, category: project_management, text: "Which project management software is best for construction projects?"}
+  - {id: pm-09, category: project_management, text: "What's the easiest project management tool for non-technical people?"}
+  - {id: pm-10, category: project_management, text: "Which project management tool scales well for a large company?"}
+  - {id: pm-11, category: project_management, text: "What kanban board tool would you recommend?"}
+  - {id: pm-12, category: project_management, text: "Which project management tool has the best time tracking?"}
+  # VPNs
+  - {id: vpn-01, category: vpns, text: "Which VPN is best for privacy?"}
+  - {id: vpn-02, category: vpns, text: "What is the best VPN for streaming?"}
+  - {id: vpn-03, category: vpns, text: "What's a good free VPN?"}
+  - {id: vpn-04, category: vpns, text: "Which VPN is fastest?"}
+  - {id: vpn-05, category: vpns, text: "What VPN would you recommend for travel abroad?"}
+  - {id: vpn-06, category: vpns, text: "Which VPN is best for torrenting?"}
+  - {id: vpn-07, category: vpns, text: "What is the best cheap VPN?"}
+  - {id: vpn-08, category: vpns, text: "Which VPN works best on a phone?"}
+  - {id: vpn-09, category: vpns, text: "What VPN should a small business use?"}
+  - {id: vpn-10, category: vpns, text: "Which VPN has a verified no-logs policy?"}
+  - {id: vpn-11, category: vpns, text: "What's the best VPN for gaming?"}
+  - {id: vpn-12, category: vpns, text: "Which VPN is easiest for a beginner to set up?"}
+  # headphones
+  - {id: hp-01, category: headphones, text: "What are the best noise cancelling headphones?"}
+  - {id: hp-02, category: headphones, text: "Which wireless earbuds are best for running?"}
+  - {id: hp-03, category: headphones, text: "What headphones would you recommend for working from home?"}
+  - {id: hp-04, category: headphones, text: "What are good budget headphones under $100?"}
+  - {id: hp-05, category: headphones, text: "Which headphones have the best sound quality for music?"}
+  - {id: hp-06, category: headphones, text: "What are the best headphones for long flights?"}
+  - {id: hp-07, category: headphones, text: "Which earbuds are best for phone calls?"}
+  - {id: hp-08, category: headphones, text: "What gaming headset would you recommend?"}
+  - {id: hp-09, category: headphones, text: "What are the most comfortable over-ear headphones?"}
+  - {id: hp-10, category: headphones, text: "Which headphones are best for studying?"}
+  - {id: hp-11, category: headphones, text: "What are good open-back headphones for audiophiles?"}
+  - {id: hp-12, category: headphones, text: "Which wireless earbuds have the best battery life?"}

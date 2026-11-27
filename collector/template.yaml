@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: llm-answer-panel daily collector (SPEC §3). us-east-2, no VPC.
+
+Parameters:
+  R2EndpointUrl:
+    Type: String
+    Description: Cloudflare R2 S3 endpoint (not secret; the R2 keys come from Parameter Store)
+  R2Bucket:
+    Type: String
+  AlertEmail:
+    Type: String
+    Description: Address that receives the alarm emails (confirm the SNS subscription email)
+  CollectionEnabled:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+    Description: Turns on the daily schedule and the missing-run alarm. The user flips this after session 6.
+  ScheduleEndDate:
+    Type: String
+    Default: ""
+    Description: ISO 8601 UTC end date, 21 days after the first scheduled run (e.g. 2026-12-31T15:00:00Z)
+
+Conditions:
+  Enabled: !Equals [!Ref CollectionEnabled, "true"]
+  HasEndDate: !Not [!Equals [!Ref ScheduleEndDate, ""]]
+
+Resources:
+  CollectorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/llm-panel-collector
+      RetentionInDays: 30
+
+  CollectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: least-privilege
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadPanelKeys
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/llm-panel/*
+              - Sid: DecryptViaParameterStoreOnly
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+              - Sid: WriteOwnLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub ${CollectorLogGroup.Arn}:*
+
+  CollectorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: llm-panel-collector
+      CodeUri: src/
+      Handler: handler.lambda_handler
+      Runtime: python3.12
+      Architectures: [x86_64]
+      MemorySize: 512
+      Timeout: 900
+      Role: !GetAtt CollectorRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref CollectorLogGroup
+      Environment:
+        Variables:
+          R2_ENDPOINT_URL: !Ref R2EndpointUrl
+          R2_BUCKET: !Ref R2Bucket
+      EventInvokeConfig:
+        # No automatic async retries: one bad day must not become 3 paid runs (SPEC §3).
+        MaximumRetryAttempts: 0
+        MaximumEventAgeInSeconds: 3600
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: scheduler.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: invoke-collector
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt CollectorFunction.Arn
+
+  DailySchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: llm-panel-daily
+      Description: Daily panel run at 14:00 UTC (SPEC §12)
+      ScheduleExpression: cron(0 14 * * ? *)
+      ScheduleExpressionTimezone: UTC
+      FlexibleTimeWindow: {Mode: "OFF"}
+      State: !If [Enabled, ENABLED, DISABLED]
+      EndDate: !If [HasEndDate, !Ref ScheduleEndDate, !Ref AWS::NoValue]
+      Target:
+        Arn: !GetAtt CollectorFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: "{}"
+        RetryPolicy:
+          MaximumRetryAttempts: 0
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: llm-panel-alerts
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  ErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: llm-panel-collector-errors
+      AlarmDescription: The collector failed, or an engine's error rate was above 10% (raised on purpose)
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref CollectorFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  MissingRunAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: llm-panel-collector-missing-run
+      AlarmDescription: Fewer than 1 invocation in 26 hours; the schedule may be broken. Off unless collection is enabled.
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref CollectorFunction}
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 26
+      DatapointsToAlarm: 26
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      ActionsEnabled: !If [Enabled, true, false]
+      AlarmActions: [!Ref AlertTopic]
+
+Outputs:
+  FunctionName:
+    Value: !Ref CollectorFunction
+  ScheduleName:
+    Value: !Ref DailySchedule
+  ScheduleState:
+    Value: !If [Enabled, ENABLED, DISABLED]

@@ -66,12 +66,12 @@ How each part works, why it was chosen, and what was rejected. Decisions still o
 **Timeout:** Lambda's maximum is 15 minutes, so calls run in parallel through a small thread pool (start with 8 workers). At 144 calls per engine, that should finish in a few minutes.
  
 **Inputs, as files in the repo, deployed with the function:**
-- `collector/prompts.yaml`: 12 prompts per category (about 72), each with an `id`, `category` and `text`, plus `samples_per_prompt: 2`. Starter prompts first, for manual test runs only; WildChat-derived prompts replace them in session 6, and the old file is kept in git history.
-- `collector/brands.yaml`: brands to track for each category, with aliases (e.g. `HP: [hp, hewlett-packard]`).
+- `collector/src/prompts.yaml`: 12 prompts per category (about 72), each with an `id`, `category` and `text`, plus `samples_per_prompt: 2`. Starter prompts first, for manual test runs only; WildChat-derived prompts replace them in session 6, and the old file is kept in git history.
+- `collector/brands.yaml`: brands to track for each category, with aliases (e.g. `HP: [hp, hewlett-packard]`). Added in session 5, once the categories are final; the collector itself doesn't read it.
  
 **Per run:** each prompt × `samples_per_prompt` (a config value, see §12) × 2 engines, so 6 × 12 × 2 = 144 calls per engine, 288 a day.
-- **OpenAI:** a current small model with web search turned on (see §12), with the search user location set explicitly to US so results don't depend on where AWS routes the request. Web search costs $10 per 1,000 calls, so about $1.70 a day.
-- **Gemini:** Flash-Lite with Google Search grounding, on the free tier. Throttle to stay under the free tier's per-minute and per-day limits. In session 2, check the real limits on the key: if Gemini alone needs more than about 8 minutes, run each engine as its own invocation so throttling can't time out the OpenAI half.
+- **OpenAI:** `gpt-6-luna` through the Responses API with the `web_search` tool, `max_tool_calls: 1` (at most one billed search per answer), reasoning effort `medium`, `store: false`, and the search user location set explicitly to US so results don't depend on where AWS routes the request. Measured on 2026-11-27: about $0.0113 per call ($0.01 search + about 13k input tokens of search content), so about $1.63 a day. No dated snapshot exists, so `model_returned` is recorded on every row and the §7 warning catches a change.
+- **Gemini:** `gemini-3.5-flash-lite` with Google Search grounding, on the **paid tier** (grounding isn't available on the free tier: every free grounded call returned 429 on 2026-11-27, and 2.5 Flash-Lite is closed to new users). AI Studio spend cap $15. Gemini decides per answer whether to search: in a 10-call test, 8 answers ran 2 queries and 2 ran none (mean 1.6), at 4–7 s per call. A smaller worker pool (4) is enough. If Gemini alone ever needs more than about 8 minutes, run each engine as its own invocation.
  
 **Retries:** up to 3 per call, with exponential backoff. A call that still fails is written as a row with `status = "error"`, never skipped, so the audit checks can count failures.
  
@@ -200,8 +200,8 @@ Day × engine partitions are fine at this volume (about 42 over the 21-day panel
  
 | Item | Expected cost |
 |---|---|
-| OpenAI with web search | Estimated ≈ $1.70/day × 21 days ≈ $36, but search-result content is also billed as input tokens, so it could be ≈ $2/day (≈ $42). Measure the real spend after the first manual run; if it is above ≈ $1.80/day, raise the hard limit from $40 to $50 (§12). A dedicated OpenAI project and key with **"Enforce a hard limit"** on (done); enforcement lags slightly, so leave a few dollars of slack. A hit cap returns 429s, which become error rows and fire the 10% alarm. |
-| Gemini (free tier) | $0. Check the grounding quota in session 2. Google may use free-tier prompts and answers to improve its products; fine for public product questions, and the README says so. |
+| OpenAI with web search | Measured ≈ $0.0113/call with `max_tool_calls: 1` → ≈ $1.63/day × 21 days ≈ $34. Uncapped, the model searched twice in 8 of 10 answers (≈ $69 for 21 days). Confirm the real spend on the OpenAI dashboard after the first manual run; if it is above ≈ $1.80/day, raise the hard limit from $40 to $50 (§12). A dedicated OpenAI project and key with **"Enforce a hard limit"** on (done); enforcement lags slightly, so leave a few dollars of slack. A hit cap returns 429s, which become error rows and fire the 10% alarm. |
+| Gemini (paid tier) | Measured in a full Lambda run (2026-11-27): tokens ≈ $0.35/day, 1.76 queries per answer (253 a day). Searches: 5,000 free a month, then $14 per 1,000. Over 21 days that is ≈ 5,300 searches plus test runs: ≈ $8 if the days span two billing months, ≈ $16 if they all fall in one. AI Studio spend cap raised to $20 before the schedule starts. The paid tier doesn't use prompts or answers to improve Google's products. |
 | Lambda, EventBridge Scheduler, Parameter Store, CloudWatch | $0 (permanent free limits). Confirm in session 2 that they apply on this account's plan after AWS's July 2025 free-tier change. |
 | Cloudflare R2 | $0 (under 10 GB) |
 | SAM deploy bucket (S3) | Cents at most |
@@ -222,7 +222,7 @@ A PR can't merge unless this passes, enforced by a **branch protection rule** on
  
 ```
 llm-answer-panel/
-├── collector/            Lambda handler, prompts.yaml, brands.yaml, template.yaml (SAM), tests/
+├── collector/            src/ (Lambda handler, engines, prompts.yaml), brands.yaml, template.yaml (SAM), samconfig.toml, tests/
 ├── orchestration/        Dagster project: assets, sensor, checks
 ├── dbt/                  dbt project: models/{staging,intermediate,marts}, seeds/ (incl. generated brands.csv, ci/ fixtures), tests/
 ├── analysis/             scripts that build the README charts from marts (bootstrap, ρ, n_eff), tests/
@@ -240,7 +240,7 @@ llm-answer-panel/
  
 | Decision | Choice | Why |
 |---|---|---|
-| OpenAI model | The cheapest current mini model that supports the Responses `web_search` tool, **pinned to a dated snapshot**. Confirm the exact model on OpenAI's model pages in session 2; reasoning effort is set above "minimal" if the model requires it, and recorded in `request_params`. | Cost is dominated by the per-search fee; a pinned snapshot keeps `model_returned` stable; the old search-preview models are shut down |
+| OpenAI model | `gpt-6-luna`: the cheapest current (non-deprecated) small model, and it supports the Responses `web_search` tool. It has **no dated snapshot**, so `model_returned` is recorded per row and checked daily (§7). `max_tool_calls: 1` and reasoning effort `medium`, recorded in `request_params`. | `gpt-5.4-mini` (the only current mini with a snapshot) would cost ≈ $67 for 21 days, over the cap; the dated minis are all deprecated and could shut down mid-panel |
 | Daily run time | Fixed, 14:00 UTC (9 am ET) | A fixed time keeps time of day from adding noise |
 | Categories | **Data-driven:** shortlist laptops, running shoes, CRM software, project-management tools, VPNs, headphones, coffee makers, smartphones. After the WildChat load and tagging (session 5), keep the **6 with the most candidate prompts** after the §8 filters. Each needs at least 5 brands people really compare. | Prompts must come from real WildChat questions, so a thin category can't be filled; credit cards were dropped from the default (US-only brands, hedged financial answers, "Discover"/"Chase" are ordinary words) |
 | Brand aliases | Brands that are ordinary words get multiword or case-sensitive aliases only (e.g. On → "On Running", "On Cloud"; "monday.com"; case-sensitive "Ninja") | Whole-word matching would otherwise count "on" in every answer |
