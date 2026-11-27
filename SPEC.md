@@ -131,8 +131,8 @@ The manifest lists the files and their row counts, and the sensor loads a run on
 | Table | Grain | Engine / ORDER BY / PARTITION BY | Why |
 |---|---|---|---|
 | `staging.panel_responses` | one row per API call | Same structure as the published table | Must match it exactly for `REPLACE PARTITION` |
-| `raw.panel_responses` | one row per API call | MergeTree, `ORDER BY (run_date, engine, prompt_id, sample_idx, run_id)`, `PARTITION BY run_date` | Queries filter by day and engine. Daily partitions make each publish one atomic swap. |
-| `raw.wildchat_conversations` | one row per conversation | MergeTree, `ORDER BY (timestamp, conversation_hash)` | Loaded once; time-ordered |
+| `raw.panel_responses` | one row per API call | MergeTree, `ORDER BY (engine, category, prompt_id, run_id, sample_idx)`, `PARTITION BY run_date`; `LowCardinality(String)` for engine, category, status, model_requested, model_returned | Daily partitions make each publish one atomic swap. `run_date` is constant within a partition, so it isn't repeated in the sort key; the marts group by engine and category. |
+| `raw.wildchat_conversations` | one row per conversation, keyed by `conversation_id` (the first turn's `turn_identifier`) | MergeTree, `ORDER BY (timestamp, conversation_id)`, `PARTITION BY source_file` | Loaded once; time-ordered. `conversation_hash` is not unique (identical conversations share it), so it is kept only as a content hash. One partition per parquet file makes the 15 GB load resumable and each file reloadable. The `header` field (user agent, accept-language) is not loaded; `hashed_ip`, `country` and `language` are kept for per-user English sampling. |
  
 Daily partitions are fine at this volume (about 365 a year). At production scale you'd partition by month and swap at a finer level. Note that in DECISIONS.md.
  

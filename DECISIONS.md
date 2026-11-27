@@ -22,3 +22,8 @@ One line per design choice or change to SPEC.md, with one line of why.
 | 2026-11-26 | §3, §9 | Collect for 21 days, enforced by an end date on the EventBridge schedule; keep the $40 cap | 31 days × $1.70 ≈ $53 would hit the $40 cap around day 23; 21 days (≈ $36) is enough for standard p′-chart limits and lands before the outreach follow-up |
 | 2026-11-27 | §4 | The published day is the latest complete run; add a blocking check for exactly one `run_id` per day in staging | Days can have several runs, and the duplicate check keys on `run_id`, so mixed runs would silently double n |
 | 2026-11-27 | §4 | The write step drops the day's staging partition before loading | Otherwise a retry would insert on top of the failed attempt's rows |
+| 2026-11-27 | §4, §5 | WildChat table gets a `source_file` column and `PARTITION BY source_file` | §4 and §5 disagreed; per-file partitions make the 15 GB load resumable and each file reloadable |
+| 2026-11-27 | §5 | WildChat key is `conversation_id` = first turn's `turn_identifier`; `conversation_hash` kept only as a content hash | The 4.8M card says `conversation_hash` is not unique |
+| 2026-11-27 | §5 | Don't load WildChat `header`; keep `hashed_ip`, `country`, `language` | Load only the personal data the analysis needs |
+| 2026-11-27 | §5 | Panel `ORDER BY (engine, category, prompt_id, run_id, sample_idx)`; `LowCardinality(String)` for low-distinct columns | `run_date` is constant within a daily partition, and the marts group by engine and category |
+| 2026-11-27 | §5 | Daily partitions for the panel; at production scale, partition by month and swap at a finer level | About 21–365 partitions is fine here; thousands of small partitions would slow merges and metadata |
