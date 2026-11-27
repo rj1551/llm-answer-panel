@@ -61,15 +61,15 @@ How each part works, why it was chosen, and what was rejected. Decisions still o
  
 ## 3. The daily collector (Lambda)
  
-**Trigger:** EventBridge Scheduler, once a day (run time: see §12). The schedule has an **end date 21 days after the first run**, so collection stops by itself (about $36 of OpenAI spend). Automatic retries are off: the Scheduler retry policy and the function's async `MaximumRetryAttempts` are both 0, so one bad day can't turn into 3 paid runs. Reruns are manual.
+**Trigger:** EventBridge Scheduler, once a day (run time: see §12). The schedule is enabled after session 6 (§12) and has an **end date 21 days after its first run**, so collection stops by itself (about $36–42 of OpenAI spend). Automatic retries are off: the Scheduler retry policy and the function's async `MaximumRetryAttempts` are both 0, so one bad day can't turn into 3 paid runs. Reruns are manual.
 **Region:** us-east-2. **Networking:** no VPC. A VPC would need a NAT gateway, at about $30+ a month.
-**Timeout:** Lambda's maximum is 15 minutes, so calls run in parallel through a small thread pool (start with 8 workers). At 150 calls per engine, that should finish in a few minutes.
+**Timeout:** Lambda's maximum is 15 minutes, so calls run in parallel through a small thread pool (start with 8 workers). At 144 calls per engine, that should finish in a few minutes.
  
 **Inputs, as files in the repo, deployed with the function:**
-- `collector/prompts.yaml`: about 30 prompts, each with an `id`, `category` and `text`. Starter prompts first; WildChat-derived prompts replace them in session 6, and the old file is kept in git history.
+- `collector/prompts.yaml`: 12 prompts per category (about 72), each with an `id`, `category` and `text`, plus `samples_per_prompt: 2`. Starter prompts first, for manual test runs only; WildChat-derived prompts replace them in session 6, and the old file is kept in git history.
 - `collector/brands.yaml`: brands to track for each category, with aliases (e.g. `HP: [hp, hewlett-packard]`).
  
-**Per run:** each prompt × `samples_per_prompt` (a config value, see §12) × 2 engines, so about 300 calls a day.
+**Per run:** each prompt × `samples_per_prompt` (a config value, see §12) × 2 engines, so 6 × 12 × 2 = 144 calls per engine, 288 a day.
 - **OpenAI:** a current small model with web search turned on (see §12), with the search user location set explicitly to US so results don't depend on where AWS routes the request. Web search costs $10 per 1,000 calls, so about $1.70 a day.
 - **Gemini:** Flash-Lite with Google Search grounding, on the free tier. Throttle to stay under the free tier's per-minute and per-day limits. In session 2, check the real limits on the key: if Gemini alone needs more than about 8 minutes, run each engine as its own invocation so throttling can't time out the OpenAI half.
  
@@ -200,7 +200,7 @@ Day × engine partitions are fine at this volume (about 42 over the 21-day panel
  
 | Item | Expected cost |
 |---|---|
-| OpenAI with web search | Estimated ≈ $1.70/day × 21 days ≈ $36, but search-result content is also billed as input tokens, so it could be ≈ $2/day (≈ $42). Measure the real spend after the first manual run and set the final budget in §12. A dedicated OpenAI project and key with **"Enforce a hard limit"** on (done); enforcement lags slightly, so leave a few dollars of slack. A hit cap returns 429s, which become error rows and fire the 10% alarm. |
+| OpenAI with web search | Estimated ≈ $1.70/day × 21 days ≈ $36, but search-result content is also billed as input tokens, so it could be ≈ $2/day (≈ $42). Measure the real spend after the first manual run; if it is above ≈ $1.80/day, raise the hard limit from $40 to $50 (§12). A dedicated OpenAI project and key with **"Enforce a hard limit"** on (done); enforcement lags slightly, so leave a few dollars of slack. A hit cap returns 429s, which become error rows and fire the 10% alarm. |
 | Gemini (free tier) | $0. Check the grounding quota in session 2. Google may use free-tier prompts and answers to improve its products; fine for public product questions, and the README says so. |
 | Lambda, EventBridge Scheduler, Parameter Store, CloudWatch | $0 (permanent free limits). Confirm in session 2 that they apply on this account's plan after AWS's July 2025 free-tier change. |
 | Cloudflare R2 | $0 (under 10 GB) |
@@ -236,10 +236,21 @@ llm-answer-panel/
  
 ---
  
-## 12. Open decisions (defaults shown; yours to confirm or change)
+## 12. Decisions (settled 2026-11-27; see DECISIONS.md)
  
-| Decision | Default | What to weigh |
+| Decision | Choice | Why |
 |---|---|---|
+| OpenAI model | The cheapest current mini model that supports the Responses `web_search` tool, **pinned to a dated snapshot**. Confirm the exact model on OpenAI's model pages in session 2; reasoning effort is set above "minimal" if the model requires it, and recorded in `request_params`. | Cost is dominated by the per-search fee; a pinned snapshot keeps `model_returned` stable; the old search-preview models are shut down |
+| Daily run time | Fixed, 14:00 UTC (9 am ET) | A fixed time keeps time of day from adding noise |
+| Categories | **Data-driven:** shortlist laptops, running shoes, CRM software, project-management tools, VPNs, headphones, coffee makers, smartphones. After the WildChat load and tagging (session 5), keep the **6 with the most candidate prompts** after the §8 filters. Each needs at least 5 brands people really compare. | Prompts must come from real WildChat questions, so a thin category can't be filled; credit cards were dropped from the default (US-only brands, hedged financial answers, "Discover"/"Chase" are ordinary words) |
+| Brand aliases | Brands that are ordinary words get multiword or case-sensitive aliases only (e.g. On → "On Running", "On Cloud"; "monday.com"; case-sensitive "Ninja") | Whole-word matching would otherwise count "on" in every answer |
+| Prompts × samples | **12 prompts per category × 2 samples** (`samples_per_prompt = 2`): 6 × 12 × 2 = 144 calls per engine per day, 288 in all | Distinct prompts are the bottleneck for the pooled estimate; 2 samples is the minimum that still measures rerun noise (ρ) |
+| Budget | If the first manual run's real OpenAI cost is above ≈ $1.80/day, raise the hard limit from $40 to **$50** rather than cutting prompts | About $10 more in the worst case, versus losing prompts, which are the bottleneck |
+| Start date | Enable the 21-day schedule **after session 6**, once the WildChat prompts are in. Sessions 2–5 use manual test runs, which are excluded from the analysis. | All 21 days then share one `prompt_version`, so the p-chart never restarts |
+| Web search on Gemini | On (grounding) | Keeps the two engines comparable; Gemini without search is a possible later variant |
+| Prompt wording | Neutral, no brand named (enforced by the §8 filter) | Prompts that name a brand would inflate its mentions |
+ 
+---|---|---|
 | OpenAI model | The current cheapest model that supports web search | Bigger models cost more per token; web search is $10 per 1,000 calls either way |
 | Daily run time | 14:00 UTC (9 am ET) | Spread the time across days, or keep it fixed? A fixed time keeps time of day from adding noise. |
 | Categories (about 6) | Laptops, running shoes, CRM software, project-management tools, credit cards, coffee makers | Mix consumer and B2B; each needs at least 5 brands people really compare |

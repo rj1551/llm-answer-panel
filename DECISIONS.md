@@ -52,3 +52,11 @@ One line per design choice or change to SPEC.md, with one line of why.
 | 2026-11-27 | §10 | Add `cfn-lint`, `dagster definitions validate` and the brands sync check to CI | CI otherwise tested only SQL and Python, not the deploy template or the Dagster code |
 | 2026-11-27 | §10, PLAN | Make the repo public in session 7 (after gitleaks), then add branch protection | Free GitHub only enforces branch protection on public repos, and session 7's "PR is blocked" test needs it |
 | 2026-11-27 | §11 | Layout lists LABELING.md, generated brands.csv, CI fixtures and analysis/tests | Keeps the layout in sync with the §6 and §8 decisions; the statistics code needs tests too |
+| 2026-11-27 | §12 | OpenAI model: cheapest current mini with Responses `web_search`, pinned to a dated snapshot; confirm in session 2 | The per-search fee dominates cost; a pinned snapshot keeps `model_returned` stable |
+| 2026-11-27 | §12 | Run time fixed at 14:00 UTC | Stops time of day adding noise |
+| 2026-11-27 | §12 | Categories chosen by data: from a shortlist of 8, keep the 6 with the most filtered WildChat candidate prompts (session 5) | Prompts must come from real questions; credit cards dropped from the default (US-only brands, hedged answers, ambiguous names) |
+| 2026-11-27 | §12 | Ambiguous brand names use multiword or case-sensitive aliases only | Whole-word matching on "On" or "Monday" would match ordinary words |
+| 2026-11-27 | §3, §12 | 12 prompts per category × 2 samples (144 calls per engine per day) | Distinct prompts are the bottleneck; 2 samples is the minimum that measures ρ |
+| 2026-11-27 | §9, §12 | If measured cost > ≈ $1.80/day, raise the hard limit to $50 instead of cutting prompts | About $10 more in the worst case, versus losing the scarcest input |
+| 2026-11-27 | §3, §12, PLAN | Enable the 21-day schedule after session 6; earlier runs are manual tests, excluded from analysis | All 21 days share one prompt set, so the p-chart never restarts |
+| 2026-11-27 | §12 | Gemini web search on; prompt wording neutral with no brand named | Keeps the engines comparable, and brand-naming prompts would inflate mentions |
