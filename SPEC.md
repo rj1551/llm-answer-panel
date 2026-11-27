@@ -184,8 +184,9 @@ Day × engine partitions are fine at this volume (about 42 over the 21-day panel
  
 ## 8. WildChat analysis
  
+0. **Population:** English user turns (`language`) in the chosen date window (§4). Sampling is **per user** via `hashed_ip`, capped at a few turns per user, so one heavy user can't dominate. Every share states this denominator.
 1. **Commercial-intent tagging:** keyword and pattern rules on user turns, such as "best … for", "recommend", "which … should I buy", "vs", "alternatives to". The rules live in a versioned seed file.
-2. **Validation:** draw a stratified random sample of 200 user turns, half tagged by the rules and half not. **You label them by hand**, in a CSV saved as a dbt seed, which Claude Code never fills in. A script reports precision and recall. If precision is under 0.8, revise the rules before reporting the finding.
+2. **Validation:** before labeling, write `LABELING.md`: the definition of a commercial question and about five borderline examples, so labels stay consistent from the first to the last. Then draw a stratified random sample of 200 user turns, half tagged by the rules and half not. **You label them by hand**, in a CSV saved as a dbt seed, which Claude Code never fills in. A script reports precision and recall. Precision comes straight from the tagged half. Recall must **weight each half by its size in the population**: the untagged half stands for far more turns, so the naive 200-sample recall would be badly inflated. Report recall with a confidence interval, which will be wide. If precision is under 0.8, revise the rules before reporting the finding.
 3. **Brand mentions:** run the same matcher from §6 on the assistant's replies to commercial turns.
 4. **Finding:** the share of conversations with a commercial question, and the top brands mentioned per category, with a sample size beside every number.
  

@@ -38,3 +38,6 @@ One line per design choice or change to SPEC.md, with one line of why.
 | 2026-11-27 | §7 | Warn when the share of zero-citation `ok` responses jumps, per engine | If web search silently stops, the panel measures model memory instead |
 | 2026-11-27 | §7 | Warn when `prompt_version` changes; restart the p-chart there and mark the charts | A changed prompt set would otherwise look like a change in the model |
 | 2026-11-27 | §3, §7 | CloudWatch alarm on < 1 Lambda invocation in 26 h (missing data breaches); disable after day 21 | The error alarm can't see a run that never happens, and Dagster freshness only runs when the laptop is on |
+| 2026-11-27 | §8 | Recall is weighted by each stratum's population size and reported with a CI; precision comes from the tagged stratum | The 50/50 sample over-represents tagged turns, so naive recall would be inflated (e.g. 98% vs. a true ~29%) |
+| 2026-11-27 | §8 | Write `LABELING.md` (definition plus borderline examples) before hand-labeling | Without a written rule, borderline labels drift between the first and the last example |
+| 2026-11-27 | §8 | WildChat population = English user turns in the chosen window, sampled per user (`hashed_ip`) with a per-user cap | Stops one heavy user dominating, and makes every share's denominator explicit |
