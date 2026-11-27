@@ -48,3 +48,7 @@ One line per design choice or change to SPEC.md, with one line of why.
 | 2026-11-27 | §9 | Dedicated OpenAI project and key with "Enforce a hard limit" on (already done) | Budgets are alert-only unless enforcement is on; a separate project keeps other usage out of the cap |
 | 2026-11-27 | §9 | The schedule is deployed disabled; the user enables it after checking the first run's cost | 21 days ≈ 6,300 calls exceeds the CLAUDE.md "ask before 1,000 calls" line |
 | 2026-11-27 | §9 | Confirm AWS always-free limits and the Gemini grounding quota in session 2; README notes Google's free-tier data use | AWS changed its free plan in July 2025, and Gemini's free-tier terms differ from the paid tier |
+| 2026-11-27 | §2 | Reject GitHub Actions cron for collection because scheduled workflows can be delayed, skipped or auto-disabled | A technical reason beats "says nothing about AWS", and missed days can't be recovered |
+| 2026-11-27 | §10 | Add `cfn-lint`, `dagster definitions validate` and the brands sync check to CI | CI otherwise tested only SQL and Python, not the deploy template or the Dagster code |
+| 2026-11-27 | §10, PLAN | Make the repo public in session 7 (after gitleaks), then add branch protection | Free GitHub only enforces branch protection on public repos, and session 7's "PR is blocked" test needs it |
+| 2026-11-27 | §11 | Layout lists LABELING.md, generated brands.csv, CI fixtures and analysis/tests | Keeps the layout in sync with the §6 and §8 decisions; the statistics code needs tests too |

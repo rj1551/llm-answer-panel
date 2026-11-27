@@ -50,7 +50,7 @@ How each part works, why it was chosen, and what was rejected. Decisions still o
  
 | Component | Why | Rejected alternative |
 |---|---|---|
-| Lambda + EventBridge Scheduler | Runs while the laptop is off, fits the permanent free limits, and is a real AWS serverless pattern | GitHub Actions cron (works, but says nothing about AWS); laptop cron (misses days) |
+| Lambda + EventBridge Scheduler | Runs while the laptop is off, fits the permanent free limits, and is a real AWS serverless pattern | GitHub Actions cron (scheduled workflows can be delayed or skipped under load and are disabled after 60 days without repo activity, which is too risky when a missed day can't be recovered); laptop cron (misses days) |
 | Cloudflare R2 | Storage that's free permanently, with no egress fees for the daily download, and it speaks the S3 API | S3: the free credits last 6 months and downloads are billed. Switching is a config change, because the endpoint and bucket come from `.env`. |
 | Parameter Store (SecureString) | Free standard tier, encrypted, and the Lambda role can read it | Secrets Manager: $0.40 per secret per month, and its rotation feature isn't needed |
 | ClickHouse | Matches the posting's stack; columnar storage suits large scans and aggregations | Snowflake: a possible extra later, running the same models for a cost comparison |
@@ -212,7 +212,9 @@ Ask before running any job that makes more than 1,000 API calls. One daily run i
  
 ## 10. CI
  
-A GitHub Actions workflow runs on every PR: start a ClickHouse service container, `dbt deps`, `dbt build` against small fixture data in `dbt/seeds/ci/`, Python unit tests (brand matcher, Wilson interval, intent rules), and `ruff`. A PR can't merge unless this passes.
+A GitHub Actions workflow runs on every PR: start a ClickHouse service container, `dbt deps`, `dbt build` against small fixture data in `dbt/seeds/ci/`, Python unit tests (brand matcher, Wilson interval, intent rules, bootstrap and ρ), and `ruff`. Three cheap offline checks cover the rest: `cfn-lint` on the SAM template, `dagster definitions validate`, and the `brands.csv` vs. `brands.yaml` sync check (§6). Fixtures can only contain what you expect, so changes in real API responses are caught by the §7 audit, not by CI.
+ 
+A PR can't merge unless this passes, enforced by a **branch protection rule** on `main`. On a free GitHub account that only works on a public repo, so session 7 runs the secret scan (gitleaks), makes the repo public, then adds the rule.
  
 ---
  
@@ -222,13 +224,13 @@ A GitHub Actions workflow runs on every PR: start a ClickHouse service container
 llm-answer-panel/
 ├── collector/            Lambda handler, prompts.yaml, brands.yaml, template.yaml (SAM), tests/
 ├── orchestration/        Dagster project: assets, sensor, checks
-├── dbt/                  dbt project: models/{staging,intermediate,marts}, seeds/, tests/
-├── analysis/             scripts that build the README charts from marts
+├── dbt/                  dbt project: models/{staging,intermediate,marts}, seeds/ (incl. generated brands.csv, ci/ fixtures), tests/
+├── analysis/             scripts that build the README charts from marts (bootstrap, ρ, n_eff), tests/
 ├── docker-compose.yml    ClickHouse
 ├── Makefile              make up / load / build / test
 ├── .env.example          key names only, no values
 ├── .github/workflows/ci.yml
-├── README.md  SPEC.md  PLAN.md  DECISIONS.md  CLAUDE.md
+├── README.md  SPEC.md  PLAN.md  DECISIONS.md  CLAUDE.md  LABELING.md
 └── data/                 (gitignored) WildChat parquet
 ```
  
