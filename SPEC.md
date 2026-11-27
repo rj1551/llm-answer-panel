@@ -6,15 +6,19 @@ How each part works, why it was chosen, and what was rejected. Decisions still o
  
 ## 1. What this project shows
  
-**The question:** when an AI assistant is asked the same product question repeatedly, how much does its answer change? So how much data does it take before a brand's "mention rate" can be trusted?
- 
-**Why it matters:** AI-visibility tools sell a number like "ChatGPT mentions your brand in 40% of answers." LLM answers are random, so a number based on a few runs is mostly noise. The pipeline measures that noise directly.
+**The question:** how much of the uncertainty in a brand's mention rate comes from rerun randomness (asking the same wording again), and how much from which wording was asked? So how many distinct prompts and how many reruns does a trustworthy number need?
+
+**The estimand:** a brand's mention rate across the questions real people ask in a category. Each real person asks once, so the population being sampled is *prompts*, and reruns are a second, smaller source of noise. The split between the two is the intraclass correlation ρ (law of total variance): if ρ is high, reruns are wasted budget and wording drives the result.
+
+**Why it matters:** AI-visibility tools sell a number like "ChatGPT mentions your brand in 40% of answers," usually from a fixed, short prompt list run a few times. LLM answers are random and wording-sensitive, so such a number is mostly noise. The pipeline measures both sources of that noise directly.
+
+**Framing:** results describe specific models called through the official APIs (e.g. "OpenAI model X via the API, with web search"), not the ChatGPT or Gemini consumer apps, which add their own system prompts, memory and personalization.
  
 **The planned findings:**
  
-1. **The sample-size curve.** Use the Wilson score interval to show how a mention rate's 95% confidence interval narrows as samples grow. One prompt with 5 samples gives an interval tens of points wide. Pinning a rate within ±5 points takes about 385 samples at p = 0.5, from n = z²·p(1−p)/E² = 1.96²·0.25/0.05² ≈ 384. No single prompt-day can get there. Precise estimates require **pooling across prompts and days**, and the analysis shows how much pooling is needed.
-2. **Real movement vs. noise.** Plot each brand's daily mention rate in a category on a **p-chart**: a control chart whose limits come from the binomial sampling error. Days outside the limits are actual changes, such as a model update. Days inside are noise. Count how many days fall outside versus the roughly 0.3% expected by chance.
-3. **One WildChat finding.** Measure how often real users ask ChatGPT for product recommendations, and which brands its answers mention, by category.
+1. **The sample-size curve.** Use the Wilson score interval to show how a mention rate's 95% confidence interval narrows as samples grow. One prompt with 5 samples gives an interval tens of points wide. Pinning a rate within ±5 points takes about 385 samples at p = 0.5, from n = z²·p(1−p)/E² = 1.96²·0.25/0.05² ≈ 384. That is the worst case: at p = 0.1 it is about 139. No single prompt-day can get there. Precise estimates require **pooling across prompts and days**, and the analysis shows how much pooling is needed. Wilson assumes independent samples, but samples of one prompt cluster around that prompt's own rate. So every pooled rate also gets a **cluster bootstrap interval** (resample prompts, then days) and an effective sample size n_eff = n / design effect. The gap between the Wilson and cluster intervals is part of the finding. Report ρ per engine and category, and the resulting trade-off: for a fixed budget, how the interval width changes with more prompts versus more reruns.
+2. **Real movement vs. noise.** Plot each brand's daily mention rate in a category on a **p-chart**: a control chart whose limits come from the binomial sampling error. Days outside the limits are actual changes, such as a model update. Days inside are noise. Because prompts differ, the counts vary more than binomial, so a plain p-chart would flag too many days. The main chart is a **Laney p′-chart**, which widens the limits by the observed overdispersion, with the plain p-chart beside it for comparison. Count how many days fall outside versus the roughly 0.3% expected by chance.
+3. **One WildChat finding.** Measure how often real users of the WildChat chatbot (WildChat-4.8M: free access to OpenAI models through the API, Apr 2023 – Jul 2025, mostly gpt-4o and gpt-4.1-mini) ask for product recommendations, and which brands the answers mention, by category. These answers came from models **without web search**, so they are a separate finding (at most a "pre-search" reference point), never compared directly with panel mention rates. WildChat's main job in the panel is as the source of real prompt wording.
  
 **Not in scope:** dashboards, a web app, modeling what *causes* a brand to be mentioned, or scraping consumer chat apps.
  
@@ -32,7 +36,7 @@ How each part works, why it was chosen, and what was rejected. Decisions still o
             on the laptop      ▼
  Dagster sensor ──> load day into staging ──> audit checks ──> publish
                                                                   │
- WildChat-1M parquet (Hugging Face) ──> Dagster asset ──> ClickHouse raw
+ WildChat-4.8M parquet (Hugging Face) ──> Dagster asset ──> ClickHouse raw
                                                                   ▼
                                     dbt: staging ──> intermediate ──> marts
                                                                   ▼
@@ -57,7 +61,7 @@ How each part works, why it was chosen, and what was rejected. Decisions still o
  
 ## 3. The daily collector (Lambda)
  
-**Trigger:** EventBridge Scheduler, once a day (run time: see §12).
+**Trigger:** EventBridge Scheduler, once a day (run time: see §12). The schedule has an **end date 21 days after the first run**, so collection stops by itself (about $36 of OpenAI spend). Automatic retries are off: the Scheduler retry policy and the function's async `MaximumRetryAttempts` are both 0, so one bad day can't turn into 3 paid runs. Reruns are manual.
 **Region:** us-east-2. **Networking:** no VPC. A VPC would need a NAT gateway, at about $30+ a month.
 **Timeout:** Lambda's maximum is 15 minutes, so calls run in parallel through a small thread pool (start with 8 workers). At 150 calls per engine, that should finish in a few minutes.
  
@@ -65,9 +69,9 @@ How each part works, why it was chosen, and what was rejected. Decisions still o
 - `collector/prompts.yaml`: about 30 prompts, each with an `id`, `category` and `text`. Starter prompts first; WildChat-derived prompts replace them in session 6, and the old file is kept in git history.
 - `collector/brands.yaml`: brands to track for each category, with aliases (e.g. `HP: [hp, hewlett-packard]`).
  
-**Per run:** each prompt × 5 samples × 2 engines, so about 300 calls a day.
-- **OpenAI:** a current small model with web search turned on (see §12). Web search costs $10 per 1,000 calls, so about $1.70 a day.
-- **Gemini:** Flash-Lite with Google Search grounding, on the free tier. Throttle to stay under the free tier's per-minute and per-day limits.
+**Per run:** each prompt × `samples_per_prompt` (a config value, see §12) × 2 engines, so about 300 calls a day.
+- **OpenAI:** a current small model with web search turned on (see §12), with the search user location set explicitly to US so results don't depend on where AWS routes the request. Web search costs $10 per 1,000 calls, so about $1.70 a day.
+- **Gemini:** Flash-Lite with Google Search grounding, on the free tier. Throttle to stay under the free tier's per-minute and per-day limits. In session 2, check the real limits on the key: if Gemini alone needs more than about 8 minutes, run each engine as its own invocation so throttling can't time out the OpenAI half.
  
 **Retries:** up to 3 per call, with exponential backoff. A call that still fails is written as a row with `status = "error"`, never skipped, so the audit checks can count failures.
  
@@ -89,8 +93,9 @@ The manifest lists the files and their row counts, and the sensor loads a run on
 | run_id, run_date | string, date | |
 | engine | string | `openai` \| `gemini` |
 | model_requested, model_returned | string | Comparing the two catches silent model changes |
-| prompt_id, prompt_version, category | string | `prompt_version` = git hash of prompts.yaml |
-| sample_idx | int | 0–4 |
+| prompt_id, prompt_version, category | string | `prompt_version` = SHA-256 of the bundled prompts.yaml content, computed at runtime (the Lambda has no git) |
+| sample_idx | int | 0 to `samples_per_prompt` − 1 |
+| request_params | string (JSON) | temperature, top_p, system prompt, tool and search settings as sent; a changed default would otherwise be invisible |
 | requested_at | timestamp (UTC) | |
 | latency_ms | int | |
 | status, error_message | string | `ok` \| `error` |
@@ -101,7 +106,7 @@ The manifest lists the files and their row counts, and the sensor loads a run on
  
 **Least-privilege execution role, defined in the SAM template:** `ssm:GetParameter` on `/llm-panel/*`, `kms:Decrypt` for the Parameter Store key, and permission to write CloudWatch logs. Nothing else. The R2 write token is read from Parameter Store, since IAM can't grant access to Cloudflare.
  
-**Alerting:** a CloudWatch alarm on Lambda errors notifies an SNS topic, which emails you.
+**Alerting:** a CloudWatch alarm on Lambda errors notifies an SNS topic, which emails you. Failed calls become error rows, so a run where every call fails would still succeed and never trigger the alarm. So after writing the manifest, the handler raises an exception on purpose if any engine's error rate is above 10%. The files are already saved, and the alarm fires.
  
 ---
  
@@ -109,13 +114,15 @@ The manifest lists the files and their row counts, and the sensor loads a run on
  
 **Sensor:** a Dagster sensor checks R2 every 15 minutes while Dagster is running. For each new `_manifest.json`, it starts that day's partition.
  
-**Write:** load the run's JSONL into `staging.panel_responses`.
+**Which run counts:** a day can have more than one run (a timed-out half-run with no manifest, or a manual rerun after a failed audit). The published day is always the **latest complete run** (latest manifest) for that `run_date`.
  
-**Audit:** run the checks in §7 on that run only.
+**Write:** first drop that day's partition in `staging.panel_responses`, then load the run's JSONL into it. A failed attempt stays in staging until the day is retried, and forever in R2.
+ 
+**Audit:** run the checks in §7 on that run only, including a blocking check that staging holds **exactly one `run_id`** for the day (the duplicate check keys on `run_id`, so two mixed runs would otherwise pass and double n).
  
 **Publish:** if every blocking check passes, run ClickHouse `ALTER TABLE raw.panel_responses REPLACE PARTITION <day> FROM staging.panel_responses`. That's an atomic swap of the whole day: readers see either the old version or the new one, never a mix. Reloading a day is safe, because it replaces the day instead of duplicating it. If a blocking check fails, nothing is published, the Dagster run fails, and the failed data stays in staging to investigate.
  
-**WildChat:** a one-time asset downloads the parquet files from `allenai/WildChat-1M` into `data/` (not committed) and loads them into `raw.wildchat_conversations`, one partition per file.
+**WildChat:** a one-time asset downloads the parquet files from `allenai/WildChat-4.8M` (ODC-BY, non-toxic subset, about 15 GB) into `data/` (not committed) and loads them into `raw.wildchat_conversations`, one partition per file. After loading, plot daily conversation counts and exclude any stretch with obvious bot-driven spikes; record the chosen date window in DECISIONS.md.
  
 ---
  
@@ -141,8 +148,8 @@ Daily partitions are fine at this volume (about 365 a year). At production scale
 | intermediate | `int_panel__brand_mentions` | response × tracked brand in its category | unique on `(response_id, brand)`; `mentioned` not null |
 | intermediate | `int_wildchat__commercial_turns` | user turn, tagged by the intent rules | unique on `(conversation_hash, turn_index)` |
 | intermediate | `int_wildchat__brand_mentions` | assistant turn × brand | unique on `(conversation_hash, turn_index, brand)` |
-| marts | `fct_panel_mentions_daily` | day × engine × prompt × brand: n, k, rate, wilson_low, wilson_high | rate between 0 and 1; n ≤ 5 |
-| marts | `fct_panel_category_daily` | day × engine × category × brand, pooled across prompts | Same, plus p-chart limits |
+| marts | `fct_panel_mentions_daily` | day × engine × prompt × brand: n, k, rate, wilson_low, wilson_high | rate between 0 and 1; n ≤ `samples_per_prompt` |
+| marts | `fct_panel_category_daily` | day × engine × category × brand, pooled across prompts | Same, plus p-chart and Laney p′ limits; n_eff ≤ n |
 | marts | `fct_run_costs` | run × engine: calls, tokens, est_cost_usd, error_rate | Nothing missing for runs that exist |
 | marts | `fct_wildchat_brand_share` | category × brand | Shares sum to 1 per category |
  
@@ -159,6 +166,7 @@ Daily partitions are fine at this volume (about 365 a year). At production scale
 | Schema matches the expected columns and types | **Block** | A change in an API's response format would silently corrupt everything downstream |
 | Row count = prompts × samples × engines (±0) | **Block** | Failed calls are written as error rows, so the count must be exact |
 | No duplicate `(run_id, engine, prompt_id, sample_idx)` | **Block** | Duplicates inflate n and shrink the confidence intervals |
+| Exactly one `run_id` per day in staging | **Block** | Two runs mixed together would each pass the duplicate check and double n |
 | Error rate ≤ 10% per engine | **Block** | Above that, the day's rates are unreliable |
 | `response_text` not empty when `status = ok` | **Block** | |
 | `model_returned` differs from the previous day | Warn | Expected occasionally; mark it on the charts |
@@ -183,7 +191,7 @@ Daily partitions are fine at this volume (about 365 a year). At production scale
  
 | Item | Expected cost |
 |---|---|
-| OpenAI with web search | ≈ $1.70/day; hard spending limit $40/month |
+| OpenAI with web search | ≈ $1.70/day × 21 days ≈ $36 in total; hard spending limit $40/month kept as a safety net (verify it blocks calls, not just alerts) |
 | Gemini (free tier) | $0 |
 | Lambda, EventBridge Scheduler, Parameter Store, CloudWatch | $0 (permanent free limits) |
 | Cloudflare R2 | $0 (under 10 GB) |
@@ -235,4 +243,4 @@ llm-answer-panel/
 Start the first Claude Code session in plan mode with: *"Read SPEC.md. Walk me through it one section at a time and explain the reasoning. After each section, ask me a question that checks I understood, and challenge anything that looks wrong or over-engineered. Then help me decide section 12. Record every change in DECISIONS.md."*
  
 You're done when you can explain three things without notes: why collection and processing are separate, why write-audit-publish uses a partition swap, and why one prompt-day's mention rate means almost nothing.
- 
+ 
