@@ -106,21 +106,21 @@ The manifest lists the files and their row counts, and the sensor loads a run on
  
 **Least-privilege execution role, defined in the SAM template:** `ssm:GetParameter` on `/llm-panel/*`, `kms:Decrypt` for the Parameter Store key, and permission to write CloudWatch logs. Nothing else. The R2 write token is read from Parameter Store, since IAM can't grant access to Cloudflare.
  
-**Alerting:** a CloudWatch alarm on Lambda errors notifies an SNS topic, which emails you. Failed calls become error rows, so a run where every call fails would still succeed and never trigger the alarm. So after writing the manifest, the handler raises an exception on purpose if any engine's error rate is above 10%. The files are already saved, and the alarm fires.
+**Alerting:** a CloudWatch alarm on Lambda errors notifies an SNS topic, which emails you. Failed calls become error rows, so a run where every call fails would still succeed and never trigger the alarm. So after writing the manifest, the handler raises an exception on purpose if any engine's error rate is above 10%. The files are already saved, and the alarm fires. A second alarm fires if the Lambda has **fewer than 1 invocation in 26 hours** (missing data counts as breaching), which catches a broken or misconfigured schedule that the error alarm can't see. Disable it after day 21. For manual reruns, the handler takes an optional `engines` list, so a failed engine can be rerun alone.
  
 ---
  
 ## 4. Loading and write-audit-publish (laptop)
  
-**Sensor:** a Dagster sensor checks R2 every 15 minutes while Dagster is running. For each new `_manifest.json`, it starts that day's partition.
+**Sensor:** a Dagster sensor checks R2 every 15 minutes while Dagster is running. For each new `_manifest.json`, it starts one `(run_date, engine)` partition per engine file the manifest lists.
  
-**Which run counts:** a day can have more than one run (a timed-out half-run with no manifest, or a manual rerun after a failed audit). The published day is always the **latest complete run** (latest manifest) for that `run_date`.
+**Which run counts:** a day can have more than one run (a timed-out half-run with no manifest, or a manual rerun after a failed audit). The published data for each `(run_date, engine)` is always the **latest complete run** (latest manifest listing that engine). Each engine publishes on its own, so a Gemini outage doesn't block OpenAI's answers.
  
-**Write:** first drop that day's partition in `staging.panel_responses`, then load the run's JSONL into it. A failed attempt stays in staging until the day is retried, and forever in R2.
+**Write:** first drop that `(run_date, engine)` partition in `staging.panel_responses`, then load the run's JSONL into it. A failed attempt stays in staging until the day is retried, and forever in R2.
  
-**Audit:** run the checks in §7 on that run only, including a blocking check that staging holds **exactly one `run_id`** for the day (the duplicate check keys on `run_id`, so two mixed runs would otherwise pass and double n).
+**Audit:** run the checks in §7 on that run only, including a blocking check that staging holds **exactly one `run_id`** for the day and engine (the duplicate check keys on `run_id`, so two mixed runs would otherwise pass and double n).
  
-**Publish:** if every blocking check passes, run ClickHouse `ALTER TABLE raw.panel_responses REPLACE PARTITION <day> FROM staging.panel_responses`. That's an atomic swap of the whole day: readers see either the old version or the new one, never a mix. Reloading a day is safe, because it replaces the day instead of duplicating it. If a blocking check fails, nothing is published, the Dagster run fails, and the failed data stays in staging to investigate.
+**Publish:** if every blocking check passes, run ClickHouse `ALTER TABLE raw.panel_responses REPLACE PARTITION (<day>, '<engine>') FROM staging.panel_responses`. That's an atomic swap of that engine's whole day: readers see either the old version or the new one, never a mix. Reloading a day is safe, because it replaces the day instead of duplicating it. If a blocking check fails, nothing is published, the Dagster run fails, and the failed data stays in staging to investigate.
  
 **WildChat:** a one-time asset downloads the parquet files from `allenai/WildChat-4.8M` (ODC-BY, non-toxic subset, about 15 GB) into `data/` (not committed) and loads them into `raw.wildchat_conversations`, one partition per file. After loading, plot daily conversation counts and exclude any stretch with obvious bot-driven spikes; record the chosen date window in DECISIONS.md.
  
@@ -131,10 +131,10 @@ The manifest lists the files and their row counts, and the sensor loads a run on
 | Table | Grain | Engine / ORDER BY / PARTITION BY | Why |
 |---|---|---|---|
 | `staging.panel_responses` | one row per API call | Same structure as the published table | Must match it exactly for `REPLACE PARTITION` |
-| `raw.panel_responses` | one row per API call | MergeTree, `ORDER BY (engine, category, prompt_id, run_id, sample_idx)`, `PARTITION BY run_date`; `LowCardinality(String)` for engine, category, status, model_requested, model_returned | Daily partitions make each publish one atomic swap. `run_date` is constant within a partition, so it isn't repeated in the sort key; the marts group by engine and category. |
+| `raw.panel_responses` | one row per API call | MergeTree, `ORDER BY (category, prompt_id, run_id, sample_idx)`, `PARTITION BY (run_date, engine)`; `LowCardinality(String)` for engine, category, status, model_requested, model_returned | Each publish is one atomic swap of one engine's day, so one engine's failure never blocks the other. `run_date` and `engine` are constant within a partition, so they aren't repeated in the sort key; the marts group by category. |
 | `raw.wildchat_conversations` | one row per conversation, keyed by `conversation_id` (the first turn's `turn_identifier`) | MergeTree, `ORDER BY (timestamp, conversation_id)`, `PARTITION BY source_file` | Loaded once; time-ordered. `conversation_hash` is not unique (identical conversations share it), so it is kept only as a content hash. One partition per parquet file makes the 15 GB load resumable and each file reloadable. The `header` field (user agent, accept-language) is not loaded; `hashed_ip`, `country` and `language` are kept for per-user English sampling. |
  
-Daily partitions are fine at this volume (about 365 a year). At production scale you'd partition by month and swap at a finer level. Note that in DECISIONS.md.
+Day × engine partitions are fine at this volume (about 42 over the 21-day panel). At production scale you'd partition by month and swap at a finer level. Note that in DECISIONS.md.
  
 ---
  
@@ -170,13 +170,15 @@ Daily partitions are fine at this volume (about 365 a year). At production scale
 | Schema matches the expected columns and types | **Block** | A change in an API's response format would silently corrupt everything downstream |
 | Row count = prompts × samples × engines (±0) | **Block** | Failed calls are written as error rows, so the count must be exact |
 | No duplicate `(run_id, engine, prompt_id, sample_idx)` | **Block** | Duplicates inflate n and shrink the confidence intervals |
-| Exactly one `run_id` per day in staging | **Block** | Two runs mixed together would each pass the duplicate check and double n |
+| Exactly one `run_id` per day and engine in staging | **Block** | Two runs mixed together would each pass the duplicate check and double n |
 | Error rate ≤ 10% per engine | **Block** | Above that, the day's rates are unreliable |
 | `response_text` not empty when `status = ok` | **Block** | |
 | `model_returned` differs from the previous day | Warn | Expected occasionally; mark it on the charts |
 | Median response length moves > 50% from the 7-day median | Warn | Often a sign of a model or prompt change |
 | Daily est. cost > $3 | Warn | Spending guardrail |
-| Freshness: no new run in 36 hours | Warn | The collector may be broken |
+| Freshness: no new run in 36 hours | Warn | The collector may be broken (only seen when Dagster runs; the CloudWatch invocation alarm in §3 covers the rest) |
+| Share of `ok` responses with zero citations jumps versus the 7-day median, per engine | Warn | Web search may have silently stopped, so answers would come from model memory |
+| `prompt_version` differs from the previous day | Warn | The prompt set changed; the p-chart restarts there, and the change is marked on the charts |
  
 ---
  

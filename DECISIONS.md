@@ -33,3 +33,8 @@ One line per design choice or change to SPEC.md, with one line of why.
 | 2026-11-27 | §6 | `collector/brands.yaml` is the single brand list; `make` generates `dbt/seeds/brands.csv` and CI checks they match | Two hand-kept lists would drift, and the matcher would track different brands than the collector |
 | 2026-11-27 | §1, §6 | Cluster bootstrap, ρ and n_eff are computed in `analysis/` (Python), not in dbt marts; drop the `n_eff ≤ n` mart test | Resampling is awkward in SQL; the marts keep counts, Wilson and control-chart limits |
 | 2026-11-27 | §6 | WildChat brand-share test allows a 1e-9 tolerance on the sum | Floating-point sums come out as 0.9999999, which an exact test would fail |
+| 2026-11-27 | §3, §4, §5, §7 | Partition the panel by `(run_date, engine)`; the run rules and the one-`run_id` check apply per day and engine; manual reruns can target one engine | With a whole-day partition, one engine's error rate would block the other's good data, and 21 days leaves little room to lose any |
+| 2026-11-27 | §5 | Panel `ORDER BY (category, prompt_id, run_id, sample_idx)` | `engine` is now constant within a partition, like `run_date` |
+| 2026-11-27 | §7 | Warn when the share of zero-citation `ok` responses jumps, per engine | If web search silently stops, the panel measures model memory instead |
+| 2026-11-27 | §7 | Warn when `prompt_version` changes; restart the p-chart there and mark the charts | A changed prompt set would otherwise look like a change in the model |
+| 2026-11-27 | §3, §7 | CloudWatch alarm on < 1 Lambda invocation in 26 h (missing data breaches); disable after day 21 | The error alarm can't see a run that never happens, and Dagster freshness only runs when the laptop is on |
