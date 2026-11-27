@@ -200,13 +200,13 @@ Day × engine partitions are fine at this volume (about 42 over the 21-day panel
  
 | Item | Expected cost |
 |---|---|
-| OpenAI with web search | ≈ $1.70/day × 21 days ≈ $36 in total; hard spending limit $40/month kept as a safety net (verify it blocks calls, not just alerts) |
-| Gemini (free tier) | $0 |
-| Lambda, EventBridge Scheduler, Parameter Store, CloudWatch | $0 (permanent free limits) |
+| OpenAI with web search | Estimated ≈ $1.70/day × 21 days ≈ $36, but search-result content is also billed as input tokens, so it could be ≈ $2/day (≈ $42). Measure the real spend after the first manual run and set the final budget in §12. A dedicated OpenAI project and key with **"Enforce a hard limit"** on (done); enforcement lags slightly, so leave a few dollars of slack. A hit cap returns 429s, which become error rows and fire the 10% alarm. |
+| Gemini (free tier) | $0. Check the grounding quota in session 2. Google may use free-tier prompts and answers to improve its products; fine for public product questions, and the README says so. |
+| Lambda, EventBridge Scheduler, Parameter Store, CloudWatch | $0 (permanent free limits). Confirm in session 2 that they apply on this account's plan after AWS's July 2025 free-tier change. |
 | Cloudflare R2 | $0 (under 10 GB) |
 | SAM deploy bucket (S3) | Cents at most |
  
-Ask before running any job that makes more than 1,000 API calls.
+Ask before running any job that makes more than 1,000 API calls. One daily run is about 300, but **enabling the 21-day schedule commits to about 6,300 calls**. So the schedule is deployed **disabled**, and you enable it yourself after checking the first manual run's real cost.
  
 ---
  
