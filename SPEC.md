@@ -250,14 +250,6 @@ llm-answer-panel/
 | Web search on Gemini | On (grounding) | Keeps the two engines comparable; Gemini without search is a possible later variant |
 | Prompt wording | Neutral, no brand named (enforced by the §8 filter) | Prompts that name a brand would inflate its mentions |
  
----|---|---|
-| OpenAI model | The current cheapest model that supports web search | Bigger models cost more per token; web search is $10 per 1,000 calls either way |
-| Daily run time | 14:00 UTC (9 am ET) | Spread the time across days, or keep it fixed? A fixed time keeps time of day from adding noise. |
-| Categories (about 6) | Laptops, running shoes, CRM software, project-management tools, credit cards, coffee makers | Mix consumer and B2B; each needs at least 5 brands people really compare |
-| Samples per prompt | 5 | More samples per prompt = better per-prompt estimates but higher cost; more prompts = broader coverage |
-| Web search on Gemini | On (grounding) | Off would compare answers from the model's memory alone, an interesting variant |
-| Prompt wording | Neutral, with no brand named in the prompt | Prompts that name a brand ("X vs Y") would inflate those brands' mentions |
- 
 ---
  
 ## 13. How to make this yours before building
